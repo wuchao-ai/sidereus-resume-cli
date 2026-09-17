@@ -1,0 +1,38 @@
+{
+  "name": "resume-cli",
+  "version": "1.0.0",
+  "description": "AI-powered resume parsing & JD matching CLI - Sidereus AI 全栈工程师笔试",
+  "type": "module",
+  "bin": {
+    "resume-cli": "./bin/resume-cli.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "fixture": "tsx scripts/make-fixture.ts",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "pdfjs-dist": "^4.10.38",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  },
+  "license": "MIT",
+  "private": true
+}

@@ -1,0 +1,19 @@
+# 依赖与构建产物
+node_modules/
+dist/
+coverage/
+
+# 环境变量：绝不提交真实 Key
+.env
+.env.local
+.env.*.local
+
+# 编辑器与系统
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# 本工具产出的结果文件
+result.json
+output/*.json
