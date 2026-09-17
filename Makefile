@@ -10,8 +10,8 @@ CLI   = $(NODE) bin/resume-cli.js
 
 help: ## 显示所有可用命令
 	@echo "resume-cli 可用命令："
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@# 用 awk 单条实现：macOS 自带的 BSD grep 对这里的正则写法不兼容
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 install: ## 安装依赖（会自动执行 build）
 	$(NPM) install
