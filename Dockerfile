@@ -16,7 +16,11 @@ WORKDIR /app
 
 # 先只拷贝依赖清单，让 npm ci 这一层能被 Docker 缓存复用
 COPY package.json package-lock.json* ./
-RUN npm ci
+# --ignore-scripts 是必需的，不是省事：package.json 里有一条 prepare = npm run build，
+# 而 npm ci 默认会执行它。此刻镜像里还没有 tsconfig.json 和 src/，
+# 编译会直接以 TS5058 失败（"The specified path does not exist: 'tsconfig.json'"）。
+# 依赖本身不需要任何安装期脚本，编译放在下面显式执行。
+RUN npm ci --ignore-scripts
 
 COPY tsconfig.json ./
 COPY src ./src
@@ -30,7 +34,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 COPY bin ./bin
