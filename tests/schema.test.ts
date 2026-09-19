@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CliError } from '../src/core/errors';
-import { normalizeMatchReport, normalizeResumeProfile } from '../src/core/schema';
+import { normalizeMatchReport, normalizeResumeProfile, MAX_SKILLS } from '../src/core/schema';
 
 describe('normalizeResumeProfile - 正常输入', () => {
   it('完整字段原样通过', () => {
@@ -78,6 +78,76 @@ describe('normalizeResumeProfile - 非法输入', () => {
 
   it('收到字符串时抛出 AI_INVALID_SHAPE', () => {
     expect(() => normalizeResumeProfile('不是对象')).toThrow(CliError);
+  });
+});
+
+describe('normalizeResumeProfile - 形状异常时不能静默丢数据', () => {
+  it('education 是字符串：置空并说明原因，而不是无声丢弃', () => {
+    const { data, warnings } = normalizeResumeProfile({ education: '浙江大学 软件工程 本科' });
+    expect(data.education).toEqual([]);
+    expect(warnings.join()).toContain('education 的类型是 string');
+  });
+
+  it('education 是数字时同样告警', () => {
+    const { data, warnings } = normalizeResumeProfile({ education: 42 });
+    expect(data.education).toEqual([]);
+    expect(warnings.join()).toContain('education 的类型是 number');
+  });
+
+  it('education 为 null 时告警；字段整体缺失时不误报类型问题', () => {
+    expect(normalizeResumeProfile({ education: null }).warnings.join()).toContain('education 为 null');
+
+    // 字段根本没出现属于正常情况（简历里就是没有），不该报"类型不对"
+    const missing = normalizeResumeProfile({ name: '张伟' }).warnings.join();
+    expect(missing).not.toContain('education 的类型');
+    expect(missing).toContain('未提取到任何教育经历');
+  });
+
+  it('数组里的非对象项被丢弃，不伪造一条全 null 的假记录', () => {
+    const { data, warnings } = normalizeResumeProfile({
+      education: [
+        { school: '浙江大学', major: '软件工程', degree: '本科', graduation_time: '2018' },
+        '垃圾数据',
+        null,
+        42,
+      ],
+    });
+
+    // 只保留真正是对象的那一条，长度不会被撑成 4
+    expect(data.education).toHaveLength(1);
+    expect(data.education[0]!.school).toBe('浙江大学');
+    expect(warnings.filter((item) => item.includes('已跳过'))).toHaveLength(3);
+  });
+
+  it('skills 里的数字与对象被丢弃并告警，而不是转成 "42" 这种噪声', () => {
+    const { data, warnings } = normalizeResumeProfile({
+      skills: ['React', 42, { name: 'Vue' }, '   '],
+    });
+    expect(data.skills).toEqual(['React']);
+    expect(warnings.join()).toContain('skills 中有 3 项不是有效文本');
+  });
+
+  it('skills 全为非字符串时置空并告警', () => {
+    const { data, warnings } = normalizeResumeProfile({ skills: [1, 2, 3] });
+    expect(data.skills).toEqual([]);
+    expect(warnings.join()).toContain('skills 中有 3 项不是有效文本');
+  });
+
+  it('skills 超过约定上限时告警，但不擅自裁掉数据', () => {
+    const skills = Array.from({ length: MAX_SKILLS + 5 }, (_, index) => `技能${index}`);
+    const { data, warnings } = normalizeResumeProfile({ skills });
+
+    // 只报告不裁剪：裁剪会真的丢信息，数量是否收敛交给调用方决定
+    expect(data.skills).toHaveLength(MAX_SKILLS + 5);
+    expect(warnings.join()).toContain(`超过约定的 ${MAX_SKILLS} 项上限`);
+    expect(warnings.join()).toContain('未裁剪');
+  });
+
+  it('正好等于上限时不告警', () => {
+    const skills = Array.from({ length: MAX_SKILLS }, (_, index) => `技能${index}`);
+    const { data, warnings } = normalizeResumeProfile({ skills });
+    expect(data.skills).toHaveLength(MAX_SKILLS);
+    expect(warnings.join()).not.toContain('上限');
   });
 });
 

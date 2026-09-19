@@ -6,6 +6,27 @@ beforeEach(() => {
   setColorEnabled(false);
 });
 
+/**
+ * 是否出现了"孤立代理码元"。
+ *
+ * 一个 emoji 在 UTF-16 里是两个码元（高位 + 低位）。按码元切分字符串时，
+ * 刀口正好落在中间就会切出半个字符，终端渲染成乱码方块。
+ * 这里手动按码元走一遍，不依赖 String.prototype.isWellFormed（Node 版本较新才有）。
+ */
+function hasLoneSurrogate(text: string): boolean {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i += 1; // 合法代理对，跳过低位
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true; // 低位代理，前面没有与之配对的高位
+    }
+  }
+  return false;
+}
+
 describe('displayWidth', () => {
   it('汉字按 2 格计算', () => {
     expect(displayWidth('姓名')).toBe(4);
@@ -23,6 +44,25 @@ describe('displayWidth', () => {
 
   it('空字符串为 0', () => {
     expect(displayWidth('')).toBe(0);
+  });
+
+  it('emoji 按 2 格计算（终端就是这么渲染的）', () => {
+    expect(displayWidth('👍')).toBe(2);
+    expect(displayWidth('a👍b')).toBe(4);
+  });
+
+  it('零宽字符不占格：变体选择符、ZWJ、肤色修饰符', () => {
+    expect(displayWidth('\uFE0F')).toBe(0);
+    expect(displayWidth('\u200D')).toBe(0);
+    expect(displayWidth('👍\uFE0F')).toBe(2);
+    expect(displayWidth('👍🏽')).toBe(2);
+  });
+
+  it('已知不精确之处：ZWJ 连字序列按码位数累加，会偏宽', () => {
+    // 👨‍👩‍👧 由 3 个 emoji + 2 个 ZWJ 组成，实际渲染是 1 个 2 格字形，这里算出 6 格。
+    // 这行断言记录的是"现状"而不是"正确"：简历正文不会出现连字序列，
+    // 不值得为它引一张几百行的 emoji 宽度表。若哪天真的要对齐，先改这里。
+    expect(displayWidth('👨\u200D👩\u200D👧')).toBe(6);
   });
 });
 
@@ -48,6 +88,12 @@ describe('truncateDisplay', () => {
     const result = truncateDisplay('这是一段很长的中文文本内容', 10);
     expect(displayWidth(result)).toBeLessThanOrEqual(10);
     expect(result.endsWith('…')).toBe(true);
+  });
+
+  it('截断 emoji 文本时不切出孤立代理码元', () => {
+    const result = truncateDisplay('👍👍👍👍👍👍', 5);
+    expect(hasLoneSurrogate(result)).toBe(false);
+    expect(displayWidth(result)).toBeLessThanOrEqual(5);
   });
 });
 
@@ -79,6 +125,28 @@ describe('wrapLines', () => {
 
   it('非法宽度会被兜底到最小值，不会死循环', () => {
     expect(wrapLines('abcdefghij', 0).length).toBeGreaterThan(0);
+  });
+
+  it('emoji 不会被拆成两个孤立半区', () => {
+    // 回归用例：token 切分正则漏了 u 标志时，[\s\S] 按 UTF-16 码元匹配，
+    // 代理对会被切开，拼回去就是乱码方块。
+    const text = 'a👍🏽b👍🏽c👍🏽d';
+    const lines = wrapLines(text, 4);
+
+    for (const line of lines) {
+      expect(hasLoneSurrogate(line)).toBe(false);
+    }
+    expect(hasLoneSurrogate(lines.join(''))).toBe(false);
+  });
+
+  it('折行后再拼接能还原原文', () => {
+    const text = '一二三👍四五';
+    expect(wrapLines(text, 6).join('')).toBe(text);
+  });
+
+  it('零宽修饰符永远跟着前一个字符，不会孤零零出现在行首', () => {
+    const lines = wrapLines('abcd👍🏽ef', 5);
+    expect(lines.some((line) => line.startsWith('🏽'))).toBe(false);
   });
 });
 
