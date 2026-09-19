@@ -17,6 +17,14 @@ import { CliError } from './errors.js';
 export const SCORE_MIN = 0;
 export const SCORE_MAX = 100;
 
+/**
+ * 技能列表的约定上限。
+ *
+ * 定义在这里而不是只写在提示词里，是为了让"提示词里说的"和"代码里查的"是同一个数 ——
+ * 两边各写一个字面量，早晚会漂移成一个说 20、一个查 30。
+ */
+export const MAX_SKILLS = 20;
+
 export interface ValidationOutcome<T> {
   data: T;
   /** 规范化过程中发生的、值得让用户知道的事（未阻断流程） */
@@ -60,12 +68,19 @@ function toNullableString(value: unknown): string | null {
 /** 把任意值收敛成字符串数组；模型返回逗号串时自动拆分 */
 function toStringArray(value: unknown, warnings: string[], fieldName: string): string[] {
   if (value === null || value === undefined || value === '') return [];
+
   if (Array.isArray(value)) {
-    const items = value.map(toNullableString).filter((item): item is string => item !== null);
+    // 只接受字符串项。这里刻意不用 toNullableString —— 它会把数字 42 变成 "42"，
+    // 而 "42" 出现在技能列表里是无意义的噪声。宁可丢弃并告警，也不要留下看起来像数据的脏值。
+    const items = value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
     const dropped = value.length - items.length;
     if (dropped > 0) warnings.push(`${fieldName} 中有 ${dropped} 项不是有效文本，已忽略`);
     return items;
   }
+
   if (typeof value === 'string') {
     const parts = value
       .split(/[,，、;；|\n]/)
@@ -74,8 +89,16 @@ function toStringArray(value: unknown, warnings: string[], fieldName: string): s
     if (parts.length > 1) warnings.push(`${fieldName} 是字符串，已按分隔符拆成 ${parts.length} 项`);
     return parts;
   }
+
   warnings.push(`${fieldName} 的类型不是数组（收到 ${typeof value}），已置为空列表`);
   return [];
+}
+
+/** 给人看的类型名：`typeof null` 是 "object"，直接打出来会把排查的人带偏 */
+function describeType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return '数组';
+  return typeof value;
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -95,28 +118,32 @@ export function normalizeResumeProfile(input: unknown): ValidationOutcome<Resume
 
   const raw = input as Record<string, unknown>;
 
-  let education: unknown[] = [];
+  // education 的四种输入形状都要有明确归宿。漏掉任何一支都会变成"静默丢数据"：
+  // 用户看到"未提取到教育经历"，却不知道是简历里没有，还是模型返回的格式被吃掉了。
+  let educationRaw: unknown[];
   if (Array.isArray(raw.education)) {
-    education = raw.education;
+    educationRaw = raw.education;
   } else if (raw.education && typeof raw.education === 'object') {
-    education = [raw.education];
+    educationRaw = [raw.education];
     warnings.push('education 不是数组，已包装为单元素数组');
-  } else if (raw.education === null || raw.education === undefined) {
-    warnings.push('education 字段缺失，已置为空数组');
+  } else if (raw.education === null || raw.education === undefined || raw.education === '') {
+    educationRaw = [];
+    if (raw.education === null) warnings.push('education 为 null，已置为空数组');
+  } else {
+    educationRaw = [];
+    warnings.push(`education 的类型是 ${describeType(raw.education)}，不是数组或对象，已忽略该字段`);
   }
 
-  const normalized = {
-    name: toNullableString(raw.name),
-    phone: toNullableString(raw.phone),
-    email: toNullableString(raw.email),
-    city: toNullableString(raw.city),
-    education: education.map((item, index) => {
-      if (item === null || typeof item !== 'object') {
-        warnings.push(`education[${index}] 不是对象，已跳过`);
-        return { school: null, major: null, degree: null, graduation_time: null };
-      }
-      const row = item as Record<string, unknown>;
-      return {
+  const education = educationRaw.flatMap((item, index) => {
+    // 非对象项直接丢弃，不伪装成一行空记录 —— 凭空造出来的空行会让人以为
+    // "模型返回过一条学历信息但不完整"，而事实是这一项根本不是学历。
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      warnings.push(`education[${index}] 不是对象（收到 ${describeType(item)}），已跳过`);
+      return [];
+    }
+    const row = item as Record<string, unknown>;
+    return [
+      {
         school: toNullableString(row.school ?? row.university ?? row.schoolName),
         major: toNullableString(row.major ?? row.subject),
         degree: toNullableString(row.degree ?? row.education),
@@ -124,9 +151,26 @@ export function normalizeResumeProfile(input: unknown): ValidationOutcome<Resume
         graduation_time: toNullableString(
           row.graduation_time ?? row.graduationTime ?? row.graduationDate ?? row.graduation_date,
         ),
-      };
-    }),
-    skills: toStringArray(raw.skills, warnings, 'skills'),
+      },
+    ];
+  });
+
+  const skills = toStringArray(raw.skills, warnings, 'skills');
+  // 提示词里写了"最多 20 项"，但模型完全可以不听。这里只报告、不裁剪：
+  // 裁剪会真的丢掉信息，而这一层的职责是形状收敛，数量是否超标由调用方判断。
+  if (skills.length > MAX_SKILLS) {
+    warnings.push(
+      `skills 有 ${skills.length} 项，超过约定的 ${MAX_SKILLS} 项上限（未裁剪，如需收敛请在调用侧处理）`,
+    );
+  }
+
+  const normalized = {
+    name: toNullableString(raw.name),
+    phone: toNullableString(raw.phone),
+    email: toNullableString(raw.email),
+    city: toNullableString(raw.city),
+    education,
+    skills,
   };
 
   const result = resumeProfileSchema.safeParse(normalized);

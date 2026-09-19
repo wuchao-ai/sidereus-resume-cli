@@ -54,8 +54,30 @@ export const c = {
 };
 
 /**
+ * 零宽字符：本身不占格子，只是给前一个字符做修饰。
+ *
+ * U+FE0F 变体选择符在等宽字体里常见的坑是"同一个码位带不带它宽度不同"，
+ * 这里统一按 0 算，宁可偏窄也不要在中文简历里多出空格。
+ */
+function isZeroWidth(code: number): boolean {
+  return (
+    (code >= 0x0300 && code <= 0x036f) || // 组合变音符
+    (code >= 0x200b && code <= 0x200f) || // 零宽空格 / 方向标记
+    (code >= 0xfe00 && code <= 0xfe0f) || // 变体选择符（含 VS16）
+    (code >= 0xfe20 && code <= 0xfe2f) || // 组合半角标记
+    code === 0x200d ||                    // 零宽连接符（ZWJ）
+    (code >= 0x1f3fb && code <= 0x1f3ff)  // 肤色修饰符
+  );
+}
+
+/**
  * 计算字符串在终端里的显示宽度。
  * 全角字符（CJK、全角标点）占 2 格，组合字符占 0 格，其余占 1 格。
+ *
+ * 关于 emoji：Unicode 东亚宽度把大部分 emoji 标成 Wide，主流终端也按 2 格渲染，
+ * 所以这里按 2 格算。**已知不精确的地方**：ZWJ 连字序列（👨‍👩‍👧 由 5 个码位组成）
+ * 实际渲染是 1 个 2 格字形，这里会算成 6 格。简历正文基本不会出现这类序列，
+ * 与其引入一张几百行的 emoji 宽度表，不如接受这点偏差并写清楚。
  */
 export function displayWidth(text: string): number {
   let width = 0;
@@ -63,6 +85,9 @@ export function displayWidth(text: string): number {
   const plain = text.replace(/\u001b\[[0-9;]*m/g, '');
   for (const char of plain) {
     const code = char.codePointAt(0)!;
+    if (isZeroWidth(code)) {
+      continue;
+    }
     if (code >= 0x1100 && (
       code <= 0x115f ||                        // 谚文字母
       code === 0x2329 || code === 0x232a ||
@@ -72,11 +97,13 @@ export function displayWidth(text: string): number {
       (code >= 0xfe30 && code <= 0xfe6f) ||    // CJK 兼容形式
       (code >= 0xff00 && code <= 0xff60) ||    // 全角形式
       (code >= 0xffe0 && code <= 0xffe6) ||
+      (code >= 0x1f300 && code <= 0x1f64f) ||  // 绘文字、表情、杂项符号
+      (code >= 0x1f680 && code <= 0x1f6ff) ||  // 交通与地图符号
+      (code >= 0x1f900 && code <= 0x1f9ff) ||  // 补充符号与象形文字
+      (code >= 0x1fa70 && code <= 0x1faff) ||  // 扩展 A 符号
       (code >= 0x20000 && code <= 0x3fffd)     // CJK 扩展 B 及以上
     )) {
       width += 2;
-    } else if (code >= 0x0300 && code <= 0x036f) {
-      width += 0; // 组合变音符
     } else {
       width += 1;
     }
@@ -189,6 +216,9 @@ export function statusLine(kind: 'ok' | 'warn' | 'info', message: string): strin
  *
  * 另外实现了一条中日韩排版的"避头尾"规则：顿号、逗号、右括号等标点不允许出现在行首，
  * 宁可让上一行略超出 1 个字符宽度，也不要出现"、React"这种断法。
+ *
+ * token 切分用的是带 `u` 标志的正则：不加的话 `[\s\S]` 按 UTF-16 码元匹配，
+ * 一个 emoji（代理对）会被拆成两个孤立半区，拼回去时直接变成乱码方块。
  */
 const FORBIDDEN_LINE_START = /^[、。，；：！？）》」』】〕〉…—·,.;:!?)\]}]$/;
 
@@ -197,7 +227,9 @@ function hardSplit(segment: string, maxWidth: number): string[] {
   const parts: string[] = [];
   let current = '';
   for (const char of segment) {
-    if (displayWidth(current) + displayWidth(char) > maxWidth && current.length > 0) {
+    const charWidth = displayWidth(char);
+    // 零宽字符永远跟着前一个字符走，不能让它自己起一行
+    if (charWidth > 0 && displayWidth(current) + charWidth > maxWidth && current.length > 0) {
       parts.push(current);
       current = '';
     }
@@ -216,7 +248,7 @@ export function wrapLines(text: string, width: number): string[] {
       lines.push('');
       continue;
     }
-    const tokens = paragraph.match(/[A-Za-z0-9_\-./+#%:@]+|\s+|[\s\S]/g) ?? [];
+    const tokens = paragraph.match(/[A-Za-z0-9_\-./+#%:@]+|\s+|[\s\S]/gu) ?? [];
     let current = '';
 
     for (const token of tokens) {

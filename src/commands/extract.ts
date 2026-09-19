@@ -12,7 +12,7 @@ import * as ui from '../core/ui.js';
 import { AiClient } from '../core/ai.js';
 import { resolveAiConfig, describeAiConfig } from '../core/config.js';
 import { parseModelJson } from '../core/json.js';
-import { buildExtractPrompt } from '../core/prompts.js';
+import { buildExtractPrompt, MAX_RESUME_CHARS } from '../core/prompts.js';
 import { CliError } from '../core/errors.js';
 import { mockResumeProfile } from '../core/mock.js';
 import { normalizeResumeProfile, type ResumeProfile } from '../core/schema.js';
@@ -65,13 +65,19 @@ export async function runExtract(pdfPath: string, options: ExtractOptions): Prom
     profile = normalizeResumeProfile(mockResumeProfile(parsed.text)).data;
     durationMs = Date.now() - startedAt;
     source = '离线规则引擎 (--mock)';
-  } else {    const config = resolveAiConfig({ ...(options.model ? { model: options.model } : {}) });
+  } else {
+    const config = resolveAiConfig({ ...(options.model ? { model: options.model } : {}) });
     logger.debug(`AI 配置：${describeAiConfig(config)}`);
     logger.info(`正在调用 ${config.model} 提取结构化信息…`);
 
     const client = new AiClient(config);
-    const prompt = buildExtractPrompt(parsed.text);
-    const response = await client.complete({ ...prompt, jsonMode: true });
+    const { system, user, budget } = buildExtractPrompt(parsed.text);
+    if (budget.resume.truncated) {
+      logger.warn(
+        `简历文本 ${budget.resume.originalChars} 字符，超出单次上限 ${MAX_RESUME_CHARS}，已截断至前 ${budget.resume.usedChars} 字符，结果可能不完整`,
+      );
+    }
+    const response = await client.complete({ system, user, jsonMode: true });
     durationMs = response.durationMs;
 
     let raw: unknown;

@@ -15,6 +15,7 @@ import { runParse } from './commands/parse.js';
 import { runExtract } from './commands/extract.js';
 import { runScore } from './commands/score.js';
 import type { CommonOptions } from './commands/common.js';
+import { parsePositiveInt } from './commands/common.js';
 
 const VERSION = '1.0.0';
 
@@ -79,7 +80,7 @@ function buildProgram(): Command {
     .description('解析 PDF 简历并提取纯文本（不调用 AI）')
     .argument('<pdf_path>', 'PDF 简历文件路径')
     .option('--full', '打印完整文本，不做行数截断')
-    .option('--lines <n>', '预览行数上限（默认 40）', (value) => Number.parseInt(value, 10))
+    .option('--lines <n>', '预览行数上限，必须是正整数（默认 40）', parsePositiveInt)
     .addOption(new Option('-o, --output <path>', '把结果保存为 JSON 文件，例如 -o result.json'))
     .option('--json', '输出纯 JSON，便于管道或 jq 处理')
     .action(async (pdfPath: string, options: Record<string, unknown>, command: Command) => {

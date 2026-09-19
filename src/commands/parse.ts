@@ -42,7 +42,13 @@ export async function runParse(pdfPath: string, options: ParseOptions): Promise<
     output: options.output,
     label: '文本',
     render: () => {
-      const maxLines = options.full ? Number.POSITIVE_INFINITY : options.lines ?? 40;
+      // 总行数在这里算一次，预览与标题共用，避免"标题说前 40 行、实际渲染 12 行"这种不一致
+      const totalLines = result.text.split('\n').length;
+      const shownLines = options.full ? totalLines : Math.min(options.lines ?? 40, totalLines);
+      const previewTitle = options.full
+        ? `文本预览（全部 ${totalLines} 行）`
+        : `文本预览（前 ${shownLines} 行，共 ${totalLines} 行）`;
+
       const lines: string[] = [
         ui.resultHeader('PDF 文本解析', result.path),
         '',
@@ -56,9 +62,9 @@ export async function runParse(pdfPath: string, options: ParseOptions): Promise<
         ]),
         '',
         ui.divider(),
-        ui.sectionTitle(`文本预览（前 ${Number.isFinite(maxLines) ? maxLines : result.pages} 行以内）`),
+        ui.sectionTitle(previewTitle),
         '',
-        ui.renderTextPreview(result.text, Number.isFinite(maxLines) ? maxLines : Number.MAX_SAFE_INTEGER),
+        ui.renderTextPreview(result.text, shownLines),
       ];
 
       if (result.suspectedScanned) {

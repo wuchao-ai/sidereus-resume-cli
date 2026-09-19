@@ -13,7 +13,7 @@ import * as ui from '../core/ui.js';
 import { AiClient } from '../core/ai.js';
 import { resolveAiConfig, describeAiConfig } from '../core/config.js';
 import { parseModelJson } from '../core/json.js';
-import { buildScorePrompt } from '../core/prompts.js';
+import { buildScorePrompt, MAX_RESUME_CHARS, MAX_JD_CHARS } from '../core/prompts.js';
 import { CliError } from '../core/errors.js';
 import { mockMatchReport } from '../core/mock.js';
 import { normalizeMatchReport, type MatchReport } from '../core/schema.js';
@@ -44,8 +44,18 @@ export async function runScore(pdfPath: string, options: ScoreOptions): Promise<
     logger.info(`正在调用 ${config.model} 进行匹配评分…`);
 
     const client = new AiClient(config);
-    const prompt = buildScorePrompt(parsed.text, jd.text);
-    const response = await client.complete({ ...prompt, jsonMode: true });
+    const { system, user, budget } = buildScorePrompt(parsed.text, jd.text);
+    if (budget.resume.truncated) {
+      logger.warn(
+        `简历文本 ${budget.resume.originalChars} 字符，超出单次上限 ${MAX_RESUME_CHARS}，已截断至前 ${budget.resume.usedChars} 字符，评分可能不完整`,
+      );
+    }
+    if (budget.jd?.truncated) {
+      logger.warn(
+        `JD 文本 ${budget.jd.originalChars} 字符，超出单次上限 ${MAX_JD_CHARS}，已截断至前 ${budget.jd.usedChars} 字符，评分可能不完整`,
+      );
+    }
+    const response = await client.complete({ system, user, jsonMode: true });
     durationMs = response.durationMs;
 
     let raw: unknown;
