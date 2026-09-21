@@ -14,6 +14,9 @@ coverage/
 .vscode/
 *.log
 
+# 仅供本地使用的文档（笔试题原文、个人笔记、使用说明等）
+/docs/
+
 # 本工具产出的结果文件
 result.json
-output/*.json
+/output/
