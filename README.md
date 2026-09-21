@@ -37,23 +37,18 @@ resume-cli extract ./resume.pdf --mock --json
 **环境要求**：Node.js ≥ 20.12（用到 `import.meta.dirname` 与原生 `fetch`）、npm ≥ 9。
 
 ```bash
-# 1. 安装依赖（会自动编译 TypeScript）
-npm install
+# 1. 安装依赖并将本项目链接为 resume-cli 命令
+npm ci
+npm link
 
-# 2. 配置 API Key（也可直接跳过，用 --mock 体验）
-cp .env.example .env && vi .env
-
-# 3. 交互式体验三个命令
-npx tsx src/cli.ts parse   fixtures/resume.pdf
-npx tsx src/cli.ts extract fixtures/resume.pdf
-npx tsx src/cli.ts score   fixtures/resume.pdf --jd fixtures/jd.txt
-
-# 或者编译后用 npm link 安装成全局命令
-npm run build && npm link
-resume-cli --help
+# 2. 进入示例文件目录，按题目要求演示三个命令
+cd fixtures
+resume-cli parse ./resume.pdf
+resume-cli extract ./resume.pdf --mock
+resume-cli score ./resume.pdf --jd ./jd.txt --mock
 ```
 
-仓库里自带一份示例简历（`fixtures/resume.pdf`）与岗位描述（`fixtures/jd.txt`），克隆下来即可直接演示。
+仓库里自带一份示例简历（`fixtures/resume.pdf`）与岗位描述（`fixtures/jd.txt`）。`--mock` 是不需要 API Key 的离线演示；要调用真实模型，回到项目根目录按下文配置 `.env`，再去掉 `--mock`。也可以运行 `resume-cli --help` 查看帮助。
 
 ---
 
