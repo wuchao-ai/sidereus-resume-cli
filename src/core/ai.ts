@@ -1,8 +1,8 @@
 /**
  * AI 调用层。
  *
- * 只对接 OpenAI 的 /chat/completions 协议 —— 因为 DeepSeek、通义、智谱、Kimi、Ollama
- * 以及绝大多数自建网关都兼容它，所以换供应商只需要改一个环境变量，代码零改动。
+ * HTTP 模式对接 OpenAI 兼容的 /chat/completions 协议；
+ * Codex 模式交给官方 CLI 管理账号登录并调用模型。
  *
  * 这一层的核心价值是「把不可靠的网络调用变成可靠的函数」：
  *   · 超时控制（不让命令无限挂起）
@@ -10,6 +10,7 @@
  *   · 错误翻译（把 401 翻译成"你的 Key 不对"，而不是甩一个状态码给用户）
  */
 
+import { completeWithCodex } from './codex.js';
 import { CliError } from './errors.js';
 import { logger } from './logger.js';
 import type { AiConfig } from './config.js';
@@ -89,6 +90,7 @@ export class AiClient {
 
   /** 带超时与重试的对话补全调用 */
   async complete(request: ChatRequest): Promise<ChatResult> {
+    if (this.config.provider === 'codex') return completeWithCodex(this.config, request);
     const { baseUrl, apiKey, model, timeoutMs, maxRetries } = this.config;
     const endpoint = `${baseUrl}/chat/completions`;
 

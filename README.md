@@ -52,13 +52,36 @@ resume-cli score ./resume.pdf --jd ./jd.txt --mock
 
 ---
 
+## 使用本机 Codex 登录调用模型
+
+已安装并登录 Codex CLI 时，可以通过官方 `codex exec` 调用模型，无需另外填写 API Key。在项目根目录的 `.env` 中配置：
+
+```dotenv
+AI_PROVIDER=codex
+CODEX_MODEL=gpt-5.6-luna
+AI_TIMEOUT_MS=120000
+# 如果 codex 不在 PATH 中，填写本机可执行文件的绝对路径：
+# CODEX_BIN=/path/to/codex
+```
+
+在项目根目录运行（`.env` 按当前工作目录读取）：
+
+```bash
+resume-cli extract fixtures/resume.pdf --json
+resume-cli score fixtures/resume.pdf --jd fixtures/jd.txt --json
+```
+
+这是通过 Codex 的真实模型调用，不是 `--mock`。登录由 Codex CLI 自己管理，本项目不读取或复制 `auth.json`。模型请求使用临时工作目录、只读沙箱和临时会话，禁用 shell 工具；结果仍经过项目现有 JSON 解析和字段校验。需要本机已登录的 Codex 以及该模型访问权限。原有 OpenAI 兼容 HTTP 接口仍可通过 `AI_PROVIDER=openai` 使用，Docker 默认走 HTTP 接口。
+
+参考：[官方非交互调用与认证说明](https://learn.chatgpt.com/docs/non-interactive-mode)。
+
 ## 环境变量配置
 
 所有配置都通过环境变量注入，优先级：**命令行参数 > 真实环境变量 > `.env` 文件**。
 
 | 变量 | 必填 | 默认值 | 说明 |
 | --- | :---: | --- | --- |
-| `OPENAI_API_KEY` | ✅ | — | API Key。缺失时命令会报 `CONFIG_MISSING` 并提示三种配置方式 |
+| `OPENAI_API_KEY` | HTTP 模式必填 | — | API Key。缺失时命令会报 `CONFIG_MISSING` 并提示三种配置方式 |
 | `OPENAI_BASE_URL` | | `https://api.openai.com/v1` | 服务端点。只要是兼容 OpenAI `/chat/completions` 协议的服务都可以直接替换 |
 | `OPENAI_MODEL` | | `gpt-4o-mini` | 模型名，也可用 `--model` 临时覆盖 |
 | `AI_TIMEOUT_MS` | | `60000` | 单次请求超时（毫秒） |
@@ -322,7 +345,7 @@ resume-cli/
 │       ├── ai.ts              # AI 客户端（超时/重试/错误翻译）
 │       ├── mock.ts            # 离线规则引擎
 │       └── emit.ts            # 统一结果输出（人看 / 机器看 / 存档）
-├── tests/                     # 11 个测试文件，144 个用例
+├── tests/                     # 12 个测试文件，149 个用例
 ├── fixtures/
 │   ├── resume.pdf             # 示例简历
 │   ├── resume.source.html     # 示例简历的 HTML 源（用于重新生成 PDF）
@@ -465,7 +488,7 @@ npm run test:watch # 监听模式
 npm run typecheck  # 只做类型检查
 ```
 
-共 **11 个测试文件、144 个用例**：
+共 **12 个测试文件、149 个用例**：
 
 | 文件 | 覆盖内容 |
 | --- | --- |
@@ -478,6 +501,7 @@ npm run typecheck  # 只做类型检查
 | `mock.test.ts` | 规则引擎的抽取与打分范围、结果可复现 |
 | `common.test.ts` | 命令行参数的整数校验（拒绝 `0` / 负数 / 小数 / 带尾巴的输入） |
 | `prompts.test.ts` | 提示词长度上限、超长输入的截断标记、防注入声明不被破坏 |
+| `codex.test.ts` | Codex 子进程协议、登录环境隔离、完成事件、失败与超时处理 |
 | `ai.test.ts` | **真实 HTTP 链路**：用本地 `node:http` 服务器扮演 OpenAI 接口 |
 | `cli.e2e.test.ts` | **端到端**：以子进程运行真正的 CLI，覆盖参数、退出码、stdout/stderr 分离 |
 
@@ -539,7 +563,7 @@ docker run --rm -e OPENAI_API_KEY=sk-xxx \
 | 清晰的项目结构 | 已完成，按 core / commands / tests 分层 | 见[项目结构](#项目结构) |
 | `README.md` | 已完成，即本文档 | `README.md` |
 | 示例命令 | 已完成，见[快速开始](#快速开始)与[示例输入与输出](#示例输入与输出) | `fixtures/` |
-| 至少 1-2 个基础测试，**或**提供 mock AI 模式 | 两条都做了：11 个测试文件共 144 个用例（含真实 HTTP 链路与 CLI 端到端），同时提供 `--mock` 离线模式 | `tests/`、`src/core/mock.ts` |
+| 至少 1-2 个基础测试，**或**提供 mock AI 模式 | 两条都做了：12 个测试文件共 149 个用例（含真实 HTTP 链路与 CLI 端到端），同时提供 `--mock` 离线模式 | `tests/`、`src/core/mock.ts` |
 
 ### 加分项
 

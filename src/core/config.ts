@@ -18,6 +18,8 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 2;
 
 export interface AiConfig {
+  provider?: "openai" | "codex";
+  codexBin?: string;
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -88,6 +90,19 @@ function readPositiveInt(name: string, fallback: number): number {
  * @throws CliError CONFIG_MISSING 缺少 API Key 时
  */
 export function resolveAiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
+  const provider = overrides.provider ?? process.env.AI_PROVIDER ?? 'openai';
+  if (provider !== 'openai' && provider !== 'codex') {
+    throw new CliError('CONFIG_MISSING', 'AI_PROVIDER 必须为 openai 或 codex');
+  }
+  if (provider === 'codex') {
+    return {
+      provider, apiKey: '', baseUrl: '',
+      model: overrides.model ?? process.env.CODEX_MODEL ?? 'gpt-5.6-luna',
+      codexBin: overrides.codexBin ?? process.env.CODEX_BIN ?? 'codex',
+      timeoutMs: overrides.timeoutMs ?? readPositiveInt('AI_TIMEOUT_MS', 120_000),
+      maxRetries: 0,
+    };
+  }
   const apiKey = overrides.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY ?? '';
   if (!apiKey) {
     throw new CliError('CONFIG_MISSING', '未找到 AI API Key', {
@@ -112,6 +127,7 @@ export function resolveAiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
 
 /** 打印当前生效的配置（隐藏 Key 主体），用于 --verbose 自检 */
 export function describeAiConfig(config: AiConfig): string {
+  if (config.provider === 'codex') return `provider=codex model=${config.model} timeout=${config.timeoutMs}ms auth=Codex登录状态`;
   const masked = config.apiKey.length > 8 ? `${config.apiKey.slice(0, 4)}****${config.apiKey.slice(-4)}` : '****';
   return `base_url=${config.baseUrl} model=${config.model} key=${masked} timeout=${config.timeoutMs}ms retries=${config.maxRetries}`;
 }

@@ -62,6 +62,7 @@ function runCli(args: string[], env: Record<string, string> = {}): Promise<RunRe
       cwd: PROJECT_ROOT,
       env: {
         ...process.env,
+        AI_PROVIDER: 'openai', // 本地 .env 的 Codex 配置不能改变 HTTP 测试路径
         NO_COLOR: '1', // 断言面对纯文本，不用逐处剥 ANSI
         AI_MAX_RETRIES: '1', // 假服务不应触发重试，真触发了也别等太久
         ...env,
