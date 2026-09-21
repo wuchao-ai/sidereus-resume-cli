@@ -27,7 +27,7 @@ resume-cli extract ./resume.pdf --mock --json
 - [设计说明](#设计说明)
 - [测试](#测试)
 - [Docker 与 Makefile](#docker-与-makefile)
-- [已实现功能](#已实现功能)
+- [需求对照](#需求对照)
 - [已知问题与未完成内容](#已知问题与未完成内容)
 
 ---
@@ -511,36 +511,62 @@ docker run --rm -e OPENAI_API_KEY=sk-xxx \
 
 ---
 
-## 已实现功能
+## 需求对照
 
-**核心要求**
+按题目条目逐项对照，并给出对应代码位置，方便直接点到实现。
 
-- [x] `parse` / `extract` / `score` 三个命令，参数清晰、支持 `--help`
-- [x] PDF 文本提取，四种异常情况都有明确提示（不存在 / 非 PDF / 无法读取 / 文本为空）
-- [x] 区分"真空白"与"疑似扫描件"，给出不同建议
-- [x] AI 结构化提取，字段契约与题目一致，返回必须是 JSON 且经过校验
-- [x] AI 调用失败有清晰错误提示（鉴权 / 限流 / 超时 / 模型不存在分别提示）
-- [x] JD 匹配评分，四个维度 0-100，含评分理由与建议面试问题
-- [x] JD 文件为空、不存在等情况有错误处理
-- [x] 终端友好的输出（分数条、文本预览、CJK 对齐）与清晰的 JSON 输出
-- [x] 清晰的项目结构、README、示例命令
-- [x] 11 个测试文件共 144 个用例（含真实 HTTP 链路与 CLI 端到端）
+### 功能要求
 
-**加分项**
+| 题目要求 | 实现情况 | 代码位置 |
+| --- | --- | --- |
+| `parse`：读取本地 PDF 并提取文本 | 已完成 | `src/commands/parse.ts` → `src/core/pdf.ts` |
+| `parse`：四类异常要有错误提示（文件不存在 / 不是 PDF / 无法读取 / 文本为空） | 已完成，四类分别给不同提示；并额外区分「真空白」与「疑似扫描件」，给出不同建议 | `src/core/errors.ts`、`src/commands/common.ts` |
+| `extract`：调用 AI 提取指定字段 | 已完成，字段契约与题目一致；查不到的返回 `null` / `[]`，**不编造、不填占位文字** | `src/commands/extract.ts`、`src/core/prompts.ts` |
+| `extract`：AI 返回必须是 JSON，且做基本校验 | 已完成，zod 校验 + 14 类格式错误自动修复（含截断补全） | `src/core/schema.ts`、`src/core/json.ts` |
+| `extract`：AI 调用失败要有清晰错误提示 | 已完成，鉴权 / 限流 / 超时 / 模型不存在分别提示，并区分「值得重试」与「重试也没用」 | `src/core/ai.ts`、`src/core/errors.ts` |
+| `score`：读取 JD 文本文件 | 已完成，支持 `.txt` / `.md`，空文件单独报错 | `src/commands/score.ts`、`src/core/io.ts` |
+| `score`：0-100 评分 + 简要理由 | 已完成，四个分数都被夹取到 `0-100`，输出含理由与建议面试问题；评分口径写死在提示词里，避免同一份简历两次调用差 20 分 | `src/core/prompts.ts`、`src/core/schema.ts` |
+| `score`：JD 为空 / 不存在要有错误处理 | 已完成 | `src/commands/score.ts` |
 
-- [x] `--output result.json` 保存结果
-- [x] `--mock` 离线模式，无 API Key 也能演示（且是真实的规则引擎，不是假数据）
-- [x] 自动修复常见 JSON 格式错误（14 类，含截断补全）
-- [x] 分级日志输出（`--verbose` / `--quiet`，日志走 stderr）
-- [x] Dockerfile 与 Makefile
+### CLI 命令要求
 
-**额外补充**
+| 题目要求 | 实现情况 | 代码位置 |
+| --- | --- | --- |
+| 至少三个命令 `parse` / `extract` / `score` | 已完成 | `src/cli.ts` |
+| 命令参数清晰、支持 `--help` | 已完成，全局与每个子命令都有独立的 `--help` | `src/cli.ts` |
+| 输出结果适合终端查看 | 已完成，分数条、文本预览、CJK 字宽对齐与折行避头尾 | `src/core/ui.ts`、`src/core/emit.ts` |
+| JSON 输出格式清晰 | 已完成，`--json` 只输出纯 JSON；日志一律走 stderr，所以 `--json > result.json` 拿到的永远是干净结果，也可直接管道给 `jq` | `src/core/emit.ts`、`src/core/logger.ts` |
 
-- [x] 结构化退出码，便于脚本分支处理
-- [x] Unicode 兼容字符归一化（解决 PDF 中文"看着对但搜不到"的问题）
-- [x] 供应商无关：换个 `OPENAI_BASE_URL` 即可切模型
-- [x] 结果可复现：mock 模式同一输入结果稳定，提示词里写死评分口径
-- [x] 输入长度护栏：超长简历/JD 截断并显式告知模型与用户，不把 context 超限的 400 甩给用户
+### 工程质量要求
+
+| 题目要求 | 实现情况 | 代码位置 |
+| --- | --- | --- |
+| 清晰的项目结构 | 已完成，按 core / commands / tests 分层 | 见[项目结构](#项目结构) |
+| `README.md` | 已完成，即本文档 | `README.md` |
+| 示例命令 | 已完成，见[快速开始](#快速开始)与[示例输入与输出](#示例输入与输出) | `fixtures/` |
+| 至少 1-2 个基础测试，**或**提供 mock AI 模式 | 两条都做了：11 个测试文件共 144 个用例（含真实 HTTP 链路与 CLI 端到端），同时提供 `--mock` 离线模式 | `tests/`、`src/core/mock.ts` |
+
+### 加分项
+
+题目列出 5 项加分项，已全部实现：
+
+| 加分项 | 实现情况 | 代码位置 |
+| --- | --- | --- |
+| `--output result.json` 保存结果 | 已完成，`-o, --output <path>` | `src/core/io.ts` |
+| `--mock` 模式，无 API Key 也能演示 | 已完成，是**真实规则引擎**而非假数据，同时充当 AI 结果的对照物 | `src/core/mock.ts` |
+| 自动修复 AI 返回的常见 JSON 格式错误 | 已完成，覆盖 14 类 | `src/core/json.ts` |
+| 简单日志输出 | 已完成，分级日志，`--verbose` / `--quiet` 控制 | `src/core/logger.ts` |
+| `Dockerfile` 或 `Makefile` | 两个都有 | `Dockerfile`、`Makefile` |
+
+### 题目之外的补充
+
+以下几点不是题目要求，但按「出错要能快速定位、失败不能静默」的思路补上了：
+
+- **结构化退出码**（`0`-`6`），便于脚本按类型分支处理 —— `src/core/errors.ts`
+- **Unicode 兼容字符归一化**，解决 PDF 中文「看着对但搜不到」的问题 —— `src/core/text.ts`
+- **供应商无关**：换个 `OPENAI_BASE_URL` 即可切模型，不绑定某一家 —— `src/core/config.ts`
+- **输入长度护栏**：超长简历 / JD 截断后，显式告知模型「后面被切掉了」，也提示用户，不把 context 超限的 400 甩给用户 —— `src/core/prompts.ts`
+- **参数启动即校验**：`--lines 0` / 负数 / `3.5` / `12abc` 一律按用法错误拒绝，不静默降级 —— `src/cli.ts`
 
 ---
 
